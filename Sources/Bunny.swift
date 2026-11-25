@@ -36,16 +36,17 @@ final class Bunny: SKNode {
     private var consuming: String?          // "hay" / "water" while actually eating/drinking
     private var steps: [() -> SKAction] = []
     private var facingRight = true
-    private let textures: BunnyTextures
+    private var textures: BunnyTextures
+    private var shownPose: Pose = .sit
     private let s: CGFloat                  // display scale
     let sprite = SKSpriteNode()
     private let shadow: SKShapeNode
     private let nameTag: SKNode
 
-    init(look: BunnyLook, spotIndex: Int) {
+    init(look: BunnyLook, spotIndex: Int, style: ArtStyle) {
         self.look = look
         self.spotIndex = spotIndex
-        textures = BunnyTextures(look: look)
+        textures = BunnyTextures(look: look, style: style)
         s = 0.95 * look.scale
         shadow = SKShapeNode(ellipseOf: CGSize(width: 56 * s, height: 10 * s))
         nameTag = Bubble.pill(look.name, fontSize: 10)
@@ -99,7 +100,7 @@ final class Bunny: SKNode {
         lastActivity = activity
         activity = .held
         isHeld = true
-        sprite.texture = textures.texture(.hop)
+        show(.hop)
         sprite.position = CGPoint(x: 0, y: 4)
         sprite.run(.repeatForever(.sequence([.rotate(toAngle: 0.12, duration: 0.18),
                                              .rotate(toAngle: -0.08, duration: 0.18)])), withKey: "kick")
@@ -341,8 +342,21 @@ final class Bunny: SKNode {
         .run { MainActor.assumeIsolated { f() } }
     }
 
+    /// Looks the texture up when it's shown, so switching art style takes effect right away.
     private func pose(_ p: Pose) -> SKAction {
-        .run(.setTexture(textures.texture(p)), onChildWithName: "body")
+        now { [weak self] in self?.show(p) }
+    }
+
+    private func show(_ p: Pose) {
+        shownPose = p
+        sprite.texture = textures.texture(p)
+    }
+
+    /// Drawn or realistic artwork, swapped in place.
+    func setArtStyle(_ style: ArtStyle) {
+        guard style != textures.style else { return }
+        textures = BunnyTextures(look: look, style: style)
+        show(shownPose)
     }
 
     private func hold(_ p: Pose, _ seconds: Double) -> () -> SKAction {
@@ -573,6 +587,20 @@ final class Bunny: SKNode {
         guard Double.random(in: 0...1) < PenModel.strayPoopChancePerHop else { return }
         let tail = position + CGPoint(x: (facingRight ? -26 : 26) * s, y: CGFloat.random(in: -2...3))
         pen?.dropPoops(at: tail, count: Int.random(in: 1...2))
+    }
+
+    /// The platform was dragged: a trip to the hay, water or litter box was
+    /// planned to where it used to be, so start that trip again.
+    func platformMoved() {
+        guard let pen else { return }
+        let spot: CGPoint
+        switch activity {
+        case .eat, .waitForHay: spot = pen.hayEatSpot(spotIndex).0
+        case .drink, .waitForWater: spot = pen.drinkSpot(spotIndex).0
+        case .litter: spot = pen.litterSpot(spotIndex)
+        default: return
+        }
+        if position.distance(to: spot) > 6 { begin(activity, steps(for: activity, pen)) }
     }
 
     /// Test runs: make the bunny do a specific thing now.

@@ -180,11 +180,25 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         add(menu, "Add hay", #selector(addHay))
         add(menu, "Fresh water", #selector(freshWater))
         add(menu, "Clean up poops and litter box", #selector(cleanUp))
+        if scene.model.platformShift > 0 {
+            add(menu, "Put the platform back in the corner", #selector(resetPlatform))
+        }
         menu.addItem(.separator())
         add(menu, hidden ? "Show bunnies" : "Hide bunnies", #selector(toggleHidden))
         add(menu, "Stay along the bottom of the screen", #selector(toggleBottomOnly)).state = scene.model.bottomOnly ? .on : .off
         add(menu, "Keep bunnies on top of windows", #selector(toggleOnTop)).state = scene.model.keepOnTop ? .on : .off
         add(menu, "Reminder notifications", #selector(toggleNotifications)).state = scene.model.notificationsOn ? .on : .off
+        let art = NSMenu()
+        art.autoenablesItems = false
+        for style in ArtStyle.allCases {
+            let item = add(art, style.menuTitle, #selector(chooseArtStyle(_:)))
+            item.representedObject = style.rawValue
+            item.state = scene.artStyle == style ? .on : .off
+            item.isEnabled = style == .drawn || BunnyArtist.hasRealisticSprites
+        }
+        let artItem = NSMenuItem(title: "Bunny art", action: nil, keyEquivalent: "")
+        artItem.submenu = art
+        menu.addItem(artItem)
         menu.addItem(.separator())
         add(menu, "Quit Snoopy & Bambi", #selector(quit))
     }
@@ -200,6 +214,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     @objc private func addHay() { scene.addHay() }
     @objc private func freshWater() { scene.freshWater() }
     @objc private func cleanUp() { scene.cleanUpEverything() }
+    @objc private func resetPlatform() { scene.resetPlatform() }
+    @objc private func chooseArtStyle(_ sender: NSMenuItem) {
+        if let name = sender.representedObject as? String, let style = ArtStyle(rawValue: name) { scene.setArtStyle(style) }
+    }
 
     @objc private func toggleHidden() {
         hidden.toggle()

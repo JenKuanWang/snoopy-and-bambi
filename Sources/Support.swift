@@ -8,6 +8,8 @@ struct LaunchOptions {
     var renderArtDir: String?
     var tourDir: String?
     var tourActs: [String]?
+    /// `--art drawn|realistic`: which artwork to use (for --render-art and test runs).
+    var artStyle: String?
     var stateDir: URL
     var verbose = false
     /// Multiplies how fast bunny needs change (for testing behaviors quickly).
@@ -29,6 +31,7 @@ struct LaunchOptions {
             case "--tour": tourDir = next()
             case "--tour-acts": tourActs = next()?.split(separator: ",").map(String.init)
             case "--state-dir": if let p = next() { stateDir = URL(fileURLWithPath: p, isDirectory: true) }
+            case "--art": artStyle = next()
             case "--verbose": verbose = true
             case "--speed": speed = next().flatMap(Double.init) ?? 1
             default: break

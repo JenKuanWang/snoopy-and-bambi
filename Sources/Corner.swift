@@ -806,11 +806,20 @@ final class CornerNode: SKNode {
     private var hayAlert = SKNode()
     private var waterAlert = SKNode()
     private var width: CGFloat = 1200
+    /// How far the platform has been slid left from the lower-right corner (points).
+    private(set) var shift: CGFloat = 0
     private static let row: CGFloat = 113
 
-    /// Mirrors a design-space x (distance from the corner's screen edge) to the right side.
-    private func mx(_ x: CGFloat) -> CGFloat { width - x }
-    private func mirrored(_ p: CGPoint) -> CGPoint { CGPoint(x: width - p.x, y: p.y) }
+    /// Mirrors a design-space x (distance from the corner's screen edge) to the
+    /// right side, then slides it left by `shift`.
+    private func mx(_ x: CGFloat) -> CGFloat { width - shift - x }
+    private func mirrored(_ p: CGPoint) -> CGPoint { CGPoint(x: mx(p.x), y: p.y) }
+
+    /// The furthest left the platform can go: its far end runs off the left
+    /// edge by the same amount it runs off the right edge in the corner.
+    static func maxShift(width: CGFloat) -> CGFloat {
+        max(0, width - PropArt.platformSize.width - 2 * platformOrigin.x)
+    }
 
     override init() {
         super.init()
@@ -844,12 +853,14 @@ final class CornerNode: SKNode {
             a.isHidden = true
             addChild(a)
         }
-        layout(width: width)
+        layout(width: width, shift: 0)
     }
 
-    /// Places everything in the lower-right corner of a scene this wide.
-    func layout(width: CGFloat) {
+    /// Places everything in the lower-right corner of a scene this wide, slid
+    /// left by `shift` (kept within the screen).
+    func layout(width: CGFloat, shift: CGFloat) {
         self.width = width
+        self.shift = min(max(shift, 0), Self.maxShift(width: width))
         func place(_ n: SKNode, _ origin: CGPoint, _ size: CGSize) {
             n.position = CGPoint(x: mx(origin.x) - size.width, y: origin.y)
         }
@@ -859,9 +870,10 @@ final class CornerNode: SKNode {
         place(litterFront, Self.litterOrigin, PropArt.litterSize)
         place(hayPile, Self.hayOrigin, PropArt.haySize)
         place(bowl, Self.bowlOrigin, PropArt.bowlSize)
-        // Buttons stay in reading order (hay, water, clean, menu), ending near the right edge.
+        // Buttons stay in reading order (hay, water, clean, menu), above the
+        // litter box, ending near the platform's right end.
         for (i, b) in buttons.enumerated() {
-            b.position = CGPoint(x: width - 36 - CGFloat(buttons.count - 1 - i) * 38, y: Self.row)
+            b.position = CGPoint(x: mx(36) - CGFloat(buttons.count - 1 - i) * 38, y: Self.row)
         }
         hayAlert.position = CGPoint(x: hayPile.position.x + PropArt.haySize.width / 2 - 20, y: Self.row)
         waterAlert.position = CGPoint(x: bowl.position.x + PropArt.bowlSize.width / 2, y: Self.row)
@@ -909,8 +921,21 @@ final class CornerNode: SKNode {
 
     /// The area bunnies shouldn't pick as a random wander target.
     var footprint: CGRect {
-        let w = Self.platformOrigin.x + PropArt.platformSize.width + 10
-        return CGRect(x: width - w, y: 0, width: w, height: 140)
+        let minX = mx(Self.platformOrigin.x + PropArt.platformSize.width + 10)
+        let maxX = mx(Self.platformOrigin.x - 10)
+        return CGRect(x: minX, y: 0, width: maxX - minX, height: 140)
+    }
+
+    /// Standing on the boards: bunnies and poops in here ride along when the
+    /// platform is dragged.
+    var surface: CGRect {
+        CGRect(x: platform.position.x + 6, y: platform.position.y,
+               width: PropArt.platformSize.width - 12, height: PropArt.platformBackY + 6)
+    }
+
+    /// Where a press grabs the platform: the boards, the rug and everything on them.
+    func grabContains(_ p: CGPoint) -> Bool {
+        [platform, rug, litterBack, hayPile, bowl].contains { $0.frame.contains(p) }
     }
 
     func sync(with model: PenModel, now: Date) {

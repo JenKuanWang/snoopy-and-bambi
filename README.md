@@ -8,12 +8,20 @@ dusk, like real rabbits.
 Snoopy is an English Angora (cream-white wool, taupe-gray face and ears
 with smoky tassels, ruby eyes); Bambi is an agouti (ticked brown-gray coat,
 cream eye ring and muzzle, dark-rimmed ears, white toes, tail dark on top and
-white underneath). Both are drawn in code from their photos; see
-`previews/` and `Sources/BunnyArt.swift`. Hover over a bunny to see its name.
+white underneath). Hover over a bunny to see its name.
 
-![Snoopy in the litter box, Bambi at the hay and water](previews/platform.png)
+They come in two art styles, and you can switch between them any time
+(🐰 menu → **Bunny art**):
 
-![Snoopy and Bambi in different poses](previews/snoopy-and-bambi-poses.png)
+- **Realistic** (the default): painted sprites made with Gemini (Nano
+  Banana) from their photos, in `Resources/Sprites`.
+- **Drawn**: drawn in code, in `Sources/BunnyArt.swift`.
+
+![Bambi drinking and Snoopy at the hay, realistic style](previews/platform.png)
+
+![Snoopy and Bambi in different poses, realistic style](previews/snoopy-and-bambi-poses.png)
+
+![Snoopy and Bambi in different poses, drawn style](previews/snoopy-and-bambi-poses-drawn.png)
 
 ## Getting it running on your Mac
 
@@ -55,6 +63,10 @@ type **snoopy**, press **Return**.
 - The litter box, hay box and water bowl sit on a wooden platform in the
   lower-right corner, with a little Persian-style rug under the bowl for
   traction. The bunnies hop up to eat, drink and use the box.
+- **Drag the platform** (grab the wood, rug, litter box, hay or bowl) to
+  slide it left or right along the bottom of the screen. Bunnies and poops
+  on it come along for the ride, the buttons follow, and it stays where you
+  leave it. 🐰 menu → **Put the platform back in the corner** returns it.
 - **🌾 Add hay**, **💧 Fresh water**, **🧹 Clean up**: buttons above the
   litter box (also in the 🐰 menu). The fourth button, 🐰, opens the menu.
 - Hay runs out in about 12 hours; water should be changed daily. When either
@@ -66,10 +78,11 @@ type **snoopy**, press **Return**.
 - **Drag a bunny** to move it out of your way. It dangles while you carry
   it, then thumps in protest when you put it down and sulks in a loaf there
   for a while before going about its business.
-- **Click a poop** to clean it up. **Click a bunny** to pet it. Everywhere
-  else, clicks go straight through to whatever is underneath (but a bunny
-  sitting on top of something does block it, so use **Hide bunnies** if one
-  is napping on your work).
+- **Click a poop** to clean it up. **Click a bunny** to pet it. Clicks on
+  the platform and the things on it go to the platform (so you can drag it);
+  everywhere else, clicks go straight through to whatever is underneath (but
+  a bunny sitting on top of something does block it, so use **Hide bunnies**
+  if one is napping on your work).
 - Litter habits: 8% of litter trips don't quite make it (a few poops, and
   sometimes a pee, on the floor), plus roughly one stray poop an hour while
   they hop around. The rest goes in the box.
@@ -89,6 +102,8 @@ type **snoopy**, press **Return**.
   **Hide bunnies** when presenting or sharing your screen.
 - 🐰 menu → **Keep bunnies on top of windows** (on by default). Turn it off
   to have them live on the desktop behind your windows.
+- 🐰 menu → **Bunny art** → **Realistic** or **Drawn** switches their look
+  right away, and it's remembered.
 
 ## Building
 
@@ -106,7 +121,11 @@ Source is in `Sources/`: `BunnyArt.swift` (the drawings), `Bunny.swift`
 (behavior), `Corner.swift` (litter box, hay, bowl, buttons),
 `PenScene.swift` (the world), `Overlay.swift` (see-through window and
 click-through), `AppDelegate.swift` (menu bar), `Model.swift` (saving).
+The realistic sprites are in `Resources/Sprites` (`<Name>-<pose>.png`,
+448×384, feet 32 px above the bottom edge); `build.sh` copies them into the
+app. If one is missing, the nearest pose is used instead.
 
 Test switches: `--test-seconds N` (quit after N s), `--snapshot file.png`,
 `--state-dir DIR` (use a separate save folder), `--speed X` (needs change X
-times faster), `--verbose`, `--render-art DIR` (draw every pose to PNGs).
+times faster), `--verbose`, `--render-art DIR` (draw every pose to PNGs),
+`--art drawn|realistic` (which art to use, also for `--render-art`).

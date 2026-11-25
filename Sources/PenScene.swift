@@ -41,6 +41,7 @@ final class PenScene: SKScene {
             if away > 20 * 60 { awayHours = away / 3600 }
         }
         model.advance(to: Date())
+        if let art = options.artStyle { model.artStyle = art }     // test runs
     }
 
     required init?(coder: NSCoder) { fatalError("not used") }
@@ -53,13 +54,16 @@ final class PenScene: SKScene {
         addChild(corner)
         sortPlatformItems()
 
-        let snoopy = Bunny(look: .snoopy, spotIndex: 0)
-        let bambi = Bunny(look: .bambi, spotIndex: 1)
+        let snoopy = Bunny(look: .snoopy, spotIndex: 0, style: artStyle)
+        let bambi = Bunny(look: .bambi, spotIndex: 1, style: artStyle)
         snoopy.partner = bambi
         bambi.partner = snoopy
+        let fp = corner.footprint, f = floorRect
+        let startLeft = fp.minX - f.minX >= f.maxX - fp.maxX      // whichever side of the platform has more room
         for (i, b) in [snoopy, bambi].enumerated() {
             b.pen = self
-            b.position = clampToFloor(CGPoint(x: corner.footprint.minX - 60 - CGFloat(i) * 70, y: 30 + CGFloat(i) * 26))
+            let x = startLeft ? fp.minX - 60 - CGFloat(i) * 70 : fp.maxX + 60 + CGFloat(i) * 70
+            b.position = clampToFloor(CGPoint(x: x, y: 30 + CGFloat(i) * 26))
             b.face(right: i == 1 ? false : true)
             addChild(b)
             bunnies.append(b)
@@ -117,7 +121,8 @@ final class PenScene: SKScene {
     func depth(atY y: CGFloat) -> CGFloat { 100 + (1 - y / max(size.height, 1)) * 100 }
 
     private func sortPlatformItems() {
-        corner.layout(width: size.width)
+        corner.layout(width: size.width, shift: CGFloat(model.platformShift))
+        model.platformShift = Double(corner.shift)
         for (node, y) in corner.depthSorted { node.zPosition = depth(atY: y) }
     }
 
@@ -162,7 +167,8 @@ final class PenScene: SKScene {
             p = clampToFloor(p)
             if !avoid.contains(p) { return p }
         }
-        return clampToFloor(CGPoint(x: avoid.minX - 40, y: 30))
+        let roomLeft = avoid.minX - f.minX >= f.maxX - avoid.maxX
+        return clampToFloor(CGPoint(x: roomLeft ? avoid.minX - 40 : avoid.maxX + 40, y: 30))
     }
 
     func hayEatSpot(_ i: Int) -> (CGPoint, Bool) { corner.hayEatSpots[i % corner.hayEatSpots.count] }
@@ -283,6 +289,16 @@ final class PenScene: SKScene {
         save()
     }
 
+    /// The art the bunnies are wearing right now.
+    var artStyle: ArtStyle { ArtStyle.resolve(model.artStyle) }
+
+    func setArtStyle(_ style: ArtStyle) {
+        model.artStyle = style.rawValue
+        for b in bunnies { b.setArtStyle(artStyle) }
+        save()
+        Log.info("Art style: \(artStyle.rawValue).")
+    }
+
     func setNotifications(_ on: Bool) {
         if on {
             reminders.enable { [weak self] granted in
@@ -380,13 +396,13 @@ final class PenScene: SKScene {
     // MARK: - Mouse
 
     private enum Target {
-        case button(PenButton), poop(Int), pee(Int), bunny(Bunny)
+        case button(PenButton), poop(Int), pee(Int), bunny(Bunny), platform
 
         var key: ObjectIdentifier? {
             switch self {
             case .button(let b): return ObjectIdentifier(b)
             case .bunny(let b): return ObjectIdentifier(b)
-            case .poop, .pee: return nil
+            case .poop, .pee, .platform: return nil
             }
         }
     }
@@ -401,12 +417,15 @@ final class PenScene: SKScene {
         if let best { return .poop(best.0) }
         for b in bunnies.sorted(by: { $0.zPosition > $1.zPosition }) where b.hitTest(p) { return .bunny(b) }
         if let i = peeSpots.firstIndex(where: { $0.frame.insetBy(dx: 2, dy: 1).contains(p) }) { return .pee(i) }
+        if corner.grabContains(p) { return .platform }
         return nil
     }
 
-    /// While a bunny is being dragged, keep catching the mouse even if the
-    /// cursor slips off it for a moment.
-    func isInteractive(at p: CGPoint) -> Bool { draggedBunny != nil || pressedBunny != nil || target(at: p) != nil }
+    /// While a bunny or the platform is being dragged, keep catching the mouse
+    /// even if the cursor slips off it for a moment.
+    func isInteractive(at p: CGPoint) -> Bool {
+        draggedBunny != nil || pressedBunny != nil || platformPress != nil || target(at: p) != nil
+    }
 
     func hover(at p: CGPoint?) {
         let key = p.flatMap { target(at: $0)?.key }
@@ -422,8 +441,18 @@ final class PenScene: SKScene {
     private var grabOffset = CGPoint.zero
     private var draggedBunny: Bunny?
 
+    // A press on the platform slides it left and right once the mouse moves.
+    private var platformPress: (point: CGPoint, shift: CGFloat)?
+    private var platformDragging = false
+    private var platformRiders: [SKNode] = []
+
     override func mouseDragged(with event: NSEvent) {
         let p = event.location(in: self)
+        if let press = platformPress {
+            if !platformDragging, abs(p.x - press.point.x) > 3 { beginPlatformDrag() }
+            if platformDragging { movePlatform(toShift: press.shift - (p.x - press.point.x)) }
+            return
+        }
         if draggedBunny == nil, let b = pressedBunny, p.distance(to: pressPoint) > 4 {
             draggedBunny = b
             b.pickUp()
@@ -435,8 +464,10 @@ final class PenScene: SKScene {
     }
 
     override func mouseUp(with event: NSEvent) {
-        defer { pressedBunny = nil; draggedBunny = nil }
-        if let b = draggedBunny {
+        defer { pressedBunny = nil; draggedBunny = nil; platformPress = nil }
+        if platformDragging {
+            endPlatformDrag()
+        } else if let b = draggedBunny {
             let spot = clampToFloor(b.position)
             Log.info("Put \(b.look.name) down at (\(Int(spot.x)), \(Int(spot.y))).")
             b.putDown(at: spot)
@@ -482,7 +513,48 @@ final class PenScene: SKScene {
             pressedBunny = b
             pressPoint = p
             grabOffset = b.position - p
+        case .platform:
+            // Wait for the mouse to move: then it slides.
+            platformPress = (p, corner.shift)
         }
+    }
+
+    // MARK: - Moving the platform
+
+    /// Bunnies, poops and pee on the boards come along for the ride.
+    func beginPlatformDrag() {
+        platformDragging = true
+        let area = corner.surface
+        let riders: [SKNode] = bunnies.filter { !$0.isHeld && area.contains($0.position) }
+        platformRiders = riders + (floorPoops + peeSpots).filter { area.contains($0.position) }
+        Log.info("Sliding the platform (\(riders.count) bunnies and \(platformRiders.count - riders.count) messes on it).")
+    }
+
+    func movePlatform(toShift newShift: CGFloat) {
+        let old = corner.shift
+        corner.layout(width: size.width, shift: newShift)
+        // Move riders by how far the platform actually went (it stops at the screen edges).
+        let dx = old - corner.shift
+        guard dx != 0 else { return }
+        for n in platformRiders { n.position.x += dx }
+    }
+
+    func endPlatformDrag() {
+        platformDragging = false
+        platformRiders = []
+        model.platformShift = Double(corner.shift)
+        // Anyone on the way to the hay, water or litter box heads for where it is now.
+        for b in bunnies { b.platformMoved() }
+        syncFloorToModel()
+        save()
+        Log.info("Put the platform down \(Int(corner.shift)) pt from the right edge.")
+    }
+
+    /// 🐰 menu → "Put the platform back in the corner".
+    func resetPlatform() {
+        beginPlatformDrag()
+        movePlatform(toShift: 0)
+        endPlatformDrag()
     }
 
     // MARK: - Test helpers
@@ -519,6 +591,43 @@ final class PenScene: SKScene {
         }
         let stepSeconds = 7.0
         let snapAt = options.tourActs == nil ? 5.5 : 1.2
+        if options.tourActs?.contains("switchart") == true {
+            // Flip the art style mid-activity, then snapshot.
+            run(.sequence([.wait(forDuration: 3.0 * Double(speed)), .run { MainActor.assumeIsolated { [weak self] in
+                guard let self else { return }
+                self.setArtStyle(self.artStyle == .drawn ? .realistic : .drawn)
+            } }, .wait(forDuration: 0.5 * Double(speed)), .run { MainActor.assumeIsolated { [weak self] in
+                _ = self?.writeSnapshot(to: "\(dir)/switched-art.png")
+            } }]))
+        }
+        if options.tourActs?.contains("platform") == true {
+            // Simulated drag of the platform, 650 pt to the left, in the first act
+            // (after the bunnies have settled on it), with snapshots during and after.
+            let grab = corner.surface.origin + CGPoint(x: 200, y: 30)
+            let s = Double(speed)
+            run(.sequence([.wait(forDuration: 2.5 * s), .run { MainActor.assumeIsolated { [weak self] in
+                guard let self else { return }
+                self.platformPress = (grab, self.corner.shift)
+                self.beginPlatformDrag()
+            } }]))
+            for k in 1...12 {
+                run(.sequence([.wait(forDuration: (2.5 + Double(k) * 0.1) * s), .run { MainActor.assumeIsolated { [weak self] in
+                    guard let self, let press = self.platformPress else { return }
+                    self.movePlatform(toShift: press.shift + 650 * CGFloat(k) / 12)
+                } }]))
+            }
+            run(.sequence([.wait(forDuration: 3.2 * s), .run { MainActor.assumeIsolated { [weak self] in
+                _ = self?.writeSnapshot(to: "\(dir)/platform-mid.png")
+            } }]))
+            run(.sequence([.wait(forDuration: 3.9 * s), .run { MainActor.assumeIsolated { [weak self] in
+                guard let self else { return }
+                self.platformPress = nil
+                self.endPlatformDrag()
+            } }]))
+            run(.sequence([.wait(forDuration: 6.5 * s), .run { MainActor.assumeIsolated { [weak self] in
+                _ = self?.writeSnapshot(to: "\(dir)/platform-after.png")
+            } }]))
+        }
         for i in 0...acts.count {
             run(.sequence([.wait(forDuration: 1 + Double(i) * stepSeconds * Double(speed)), .run { MainActor.assumeIsolated { [weak self] in
                 guard let self, self.bunnies.count == 2 else { return }
@@ -617,7 +726,8 @@ final class PenScene: SKScene {
     func toast(_ text: String) {
         let t = Bubble.pill(text, fontSize: 11, color: NSColor(hex: 0xFFF8E8))
         let w = t.calculateAccumulatedFrame().width
-        t.position = CGPoint(x: min(size.width - 14 - w / 2, corner.footprint.maxX - 14 - w / 2), y: corner.footprint.maxY + 18)
+        let x = min(size.width - 14 - w / 2, corner.footprint.maxX - 14 - w / 2)
+        t.position = CGPoint(x: max(14 + w / 2, x), y: corner.footprint.maxY + 18)
         t.zPosition = 420
         t.alpha = 0
         addChild(t)

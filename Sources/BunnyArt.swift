@@ -1,4 +1,5 @@
 import AppKit
+import ImageIO
 import SpriteKit
 
 // Bunny artwork painted from real photos of Snoopy (sable-point English Angora)
@@ -151,6 +152,35 @@ enum Pose: String, CaseIterable {
     case groom, groomB
     case periscope
     case thump
+
+    /// The closest pose to use if a realistic sprite for this one is missing.
+    var nearest: Pose? {
+        switch self {
+        case .sit: return nil
+        case .sitNose, .sitEarTwitch, .thump, .periscope, .groom, .loaf, .crouch: return .sit
+        case .land: return .crouch
+        case .hop: return .land
+        case .sleep: return .loaf
+        case .flop: return .sleep
+        case .eat: return .loaf
+        case .eatChew: return .eat
+        case .groomB: return .groom
+        }
+    }
+}
+
+/// Which artwork the bunnies wear: drawn in code (BunnyArtist), or the
+/// realistic painted sprites in Resources/Sprites (made with Gemini).
+enum ArtStyle: String, CaseIterable {
+    case drawn, realistic
+
+    var menuTitle: String { self == .drawn ? "Drawn" : "Realistic" }
+
+    /// Realistic if asked for and the sprites are there; drawn otherwise.
+    static func resolve(_ name: String?) -> ArtStyle {
+        let wanted = name.flatMap(ArtStyle.init(rawValue:)) ?? .realistic
+        return wanted == .realistic && BunnyArtist.hasRealisticSprites ? .realistic : .drawn
+    }
 }
 
 // MARK: - Anatomical Geometry
@@ -636,7 +666,33 @@ enum BunnyArtist {
     static let marginX: CGFloat = 6
     private static let sRGB = CGColorSpace(name: CGColorSpace.sRGB)!
 
-    static func image(_ look: BunnyLook, _ pose: Pose) -> CGImage? {
+    /// Where the realistic sprites (`<Name>-<pose>.png`, 448×384, feet on the
+    /// ground line) are: inside the app, or next to the source when a test
+    /// build runs from the project folder.
+    private static let spriteFolder: URL? = {
+        let fm = FileManager.default
+        let candidates = [Bundle.main.resourceURL?.appendingPathComponent("Sprites", isDirectory: true),
+                          URL(fileURLWithPath: fm.currentDirectoryPath).appendingPathComponent("Resources/Sprites", isDirectory: true)]
+        return candidates.compactMap { $0 }.first { fm.fileExists(atPath: $0.appendingPathComponent("Snoopy-sit.png").path) }
+    }()
+
+    static var hasRealisticSprites: Bool { spriteFolder != nil }
+
+    /// A realistic sprite for this pose, or the nearest pose that has one.
+    private static func realisticSprite(_ look: BunnyLook, _ pose: Pose) -> CGImage? {
+        guard !look.isStandIn, let folder = spriteFolder else { return nil }
+        var p: Pose? = pose
+        while let q = p {
+            let url = folder.appendingPathComponent("\(look.name)-\(q.rawValue).png")
+            if let src = CGImageSourceCreateWithURL(url as CFURL, nil),
+               let img = CGImageSourceCreateImageAtIndex(src, 0, nil) { return img }
+            p = q.nearest
+        }
+        return nil
+    }
+
+    static func image(_ look: BunnyLook, _ pose: Pose, style: ArtStyle = .drawn) -> CGImage? {
+        if style == .realistic, let sprite = realisticSprite(look, pose) { return sprite }
         let w = Int(canvas.width * pixelScale), h = Int(canvas.height * pixelScale)
         guard let ctx = CGContext(data: nil, width: w, height: h, bitsPerComponent: 8, bytesPerRow: 0, space: sRGB,
                                   bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue) else { return nil }
@@ -1673,13 +1729,14 @@ enum BunnyArtist {
 final class BunnyTextures {
     private var cache: [Pose: SKTexture] = [:]
     let look: BunnyLook
+    let style: ArtStyle
 
-    init(look: BunnyLook) { self.look = look }
+    init(look: BunnyLook, style: ArtStyle) { self.look = look; self.style = style }
 
     func texture(_ pose: Pose) -> SKTexture {
         if let t = cache[pose] { return t }
         let t: SKTexture
-        if let img = BunnyArtist.image(look, pose) {
+        if let img = BunnyArtist.image(look, pose, style: style) {
             t = SKTexture(cgImage: img)
         } else {
             t = SKTexture()
@@ -1690,9 +1747,9 @@ final class BunnyTextures {
     }
 }
 
-/// `--render-art <folder>`: writes every pose as PNG plus a contact sheet.
+/// `--render-art <folder> [--art drawn|realistic]`: writes every pose as PNG plus a contact sheet.
 enum ArtRenderer {
-    static func renderAll(to dir: URL) {
+    static func renderAll(to dir: URL, style: ArtStyle = .drawn) {
         try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
         let looks = [BunnyLook.snoopy, BunnyLook.bambi]
         let poses = Pose.allCases
@@ -1711,7 +1768,7 @@ enum ArtRenderer {
 
         for (li, look) in looks.enumerated() {
             for (pi, pose) in poses.enumerated() {
-                guard let img = BunnyArtist.image(look, pose) else { continue }
+                guard let img = BunnyArtist.image(look, pose, style: style) else { continue }
                 PNG.write(img, to: dir.appendingPathComponent("\(look.name)-\(pose.rawValue).png"))
                 let row = li * rowsPerLook + pi / cols
                 let x = (pi % cols) * cellW
@@ -1726,6 +1783,6 @@ enum ArtRenderer {
         if let img = sheet.makeImage() {
             PNG.write(img, to: dir.appendingPathComponent("contact-sheet.png"))
         }
-        print("Wrote \(looks.count * poses.count) poses to \(dir.path)")
+        print("Wrote \(looks.count * poses.count) \(style.rawValue) poses to \(dir.path)")
     }
 }

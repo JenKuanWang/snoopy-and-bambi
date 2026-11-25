@@ -20,6 +20,14 @@ swiftc -O -swift-version 5 \
   -o "$STAGE/$NAME/Contents/MacOS/SnoopyAndBambi" \
   -framework AppKit -framework SpriteKit -framework UserNotifications
 
+# Copy painted bunny sprite sheets into Contents/Resources/Sprites (if present).
+if [ -d "Resources/Sprites" ]; then
+  mkdir -p "$STAGE/$NAME/Contents/Resources/Sprites"
+  for f in Resources/Sprites/*.png; do
+    [ -f "$f" ] && cat "$f" > "$STAGE/$NAME/Contents/Resources/Sprites/$(basename "$f")"
+  done
+fi
+
 # Write (not copy) the plist so no extended attributes come along.
 cat Info.plist > "$STAGE/$NAME/Contents/Info.plist"
 xattr -cr "$STAGE/$NAME" 2>/dev/null || true

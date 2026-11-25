@@ -5,7 +5,7 @@ Log.setup(directory: options.stateDir, verbose: options.verbose)
 
 if let dir = options.renderArtDir {
     // Draw every bunny pose to PNG files (for checking the artwork), then quit.
-    ArtRenderer.renderAll(to: URL(fileURLWithPath: dir, isDirectory: true))
+    ArtRenderer.renderAll(to: URL(fileURLWithPath: dir, isDirectory: true), style: ArtStyle.resolve(options.artStyle ?? "drawn"))
     exit(0)
 }
 

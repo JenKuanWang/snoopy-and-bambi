@@ -35,6 +35,10 @@ struct PenModel: Codable {
     var keepOnTop = true
     /// Bunnies live in a strip along the bottom of the screen (vs. the whole screen).
     var bottomOnly = true
+    /// How far the platform has been dragged left from the lower-right corner (points).
+    var platformShift = 0.0
+    /// "realistic" (painted sprites) or "drawn" (drawn in code).
+    var artStyle = "realistic"
     var notificationsOn = false
     var lastHayNotice: Date?
     var lastWaterNotice: Date?
@@ -58,6 +62,8 @@ struct PenModel: Codable {
         lastUpdate = try c.decodeIfPresent(Date.self, forKey: .lastUpdate) ?? Date()
         keepOnTop = try c.decodeIfPresent(Bool.self, forKey: .keepOnTop) ?? true
         bottomOnly = try c.decodeIfPresent(Bool.self, forKey: .bottomOnly) ?? true
+        platformShift = try c.decodeIfPresent(Double.self, forKey: .platformShift) ?? 0
+        artStyle = try c.decodeIfPresent(String.self, forKey: .artStyle) ?? d.artStyle
         notificationsOn = try c.decodeIfPresent(Bool.self, forKey: .notificationsOn) ?? false
         lastHayNotice = try c.decodeIfPresent(Date.self, forKey: .lastHayNotice)
         lastWaterNotice = try c.decodeIfPresent(Date.self, forKey: .lastWaterNotice)
