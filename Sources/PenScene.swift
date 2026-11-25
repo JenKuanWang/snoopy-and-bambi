@@ -15,6 +15,9 @@ final class PenScene: SKScene {
     private var lastClockTick = Date()
 
     private let store: PenStore
+    /// Everything on screen lives in here, drawn at `displayScale`. Positions,
+    /// distances and sizes are all in its (unscaled) points.
+    private let world = SKNode()
     private let corner = CornerNode()
     private let reminders = Reminders()
     private(set) var bunnies: [Bunny] = []
@@ -42,6 +45,7 @@ final class PenScene: SKScene {
         }
         model.advance(to: Date())
         if let art = options.artStyle { model.artStyle = art }     // test runs
+        if let size = options.displaySize { model.displaySize = size }
     }
 
     required init?(coder: NSCoder) { fatalError("not used") }
@@ -51,7 +55,10 @@ final class PenScene: SKScene {
     override func didMove(to view: SKView) {
         guard !didSetUp else { return }
         didSetUp = true
-        addChild(corner)
+        world.setScale(displayScale)
+        addChild(world)
+        world.addChild(corner)
+        for b in corner.buttons { b.setLabelScale(labelScale) }
         sortPlatformItems()
 
         let snoopy = Bunny(look: .snoopy, spotIndex: 0, style: artStyle)
@@ -65,7 +72,8 @@ final class PenScene: SKScene {
             let x = startLeft ? fp.minX - 60 - CGFloat(i) * 70 : fp.maxX + 60 + CGFloat(i) * 70
             b.position = clampToFloor(CGPoint(x: x, y: 30 + CGFloat(i) * 26))
             b.face(right: i == 1 ? false : true)
-            addChild(b)
+            b.setLabelScale(labelScale)
+            world.addChild(b)
             bunnies.append(b)
         }
 
@@ -117,11 +125,18 @@ final class PenScene: SKScene {
         toast(text)
     }
 
+    /// How big everything is drawn (1 = the original size).
+    var displayScale: CGFloat { CGFloat(min(max(model.displaySize, 0.3), 1.5)) }
+    /// The screen area in world points (bigger than the screen when drawn small).
+    var worldSize: CGSize { CGSize(width: size.width / displayScale, height: size.height / displayScale) }
+    /// Text bubbles shrink less than everything else, so they stay readable.
+    var labelScale: CGFloat { max(1, 0.9 / displayScale) }
+
     /// Depth from how far down the screen something stands (lower = nearer).
-    func depth(atY y: CGFloat) -> CGFloat { 100 + (1 - y / max(size.height, 1)) * 100 }
+    func depth(atY y: CGFloat) -> CGFloat { 100 + (1 - y / max(worldSize.height, 1)) * 100 }
 
     private func sortPlatformItems() {
-        corner.layout(width: size.width, shift: CGFloat(model.platformShift))
+        corner.layout(width: worldSize.width, shift: CGFloat(model.platformShift))
         model.platformShift = Double(corner.shift)
         for (node, y) in corner.depthSorted { node.zPosition = depth(atY: y) }
     }
@@ -139,8 +154,9 @@ final class PenScene: SKScene {
     var floorRect: CGRect {
         // Along the bottom: feet stay in a band ~90 pt deep, so there's still
         // room to be in front of, beside, or behind the platform.
-        let depth: CGFloat = model.bottomOnly ? min(88, max(40, size.height - 160)) : max(100, size.height - 90)
-        return CGRect(x: 40, y: 18, width: max(100, size.width - 80), height: depth)
+        let area = worldSize
+        let depth: CGFloat = model.bottomOnly ? min(88, max(40, area.height - 160)) : max(100, area.height - 90)
+        return CGRect(x: 40, y: 18, width: max(100, area.width - 80), height: depth)
     }
 
     func clampToFloor(_ p: CGPoint) -> CGPoint {
@@ -227,7 +243,7 @@ final class PenScene: SKScene {
         n.size = CGSize(width: 9, height: 9)
         n.position = p
         n.zPosition = 20
-        addChild(n)
+        world.addChild(n)
         floorPoops.append(n)
     }
 
@@ -236,12 +252,18 @@ final class PenScene: SKScene {
         n.size = CGSize(width: 26, height: 14)
         n.position = p
         n.zPosition = 15
-        addChild(n)
+        world.addChild(n)
         peeSpots.append(n)
     }
 
-    private func toSpot(_ p: CGPoint) -> Spot { Spot(x: Double(p.x / max(size.width, 1)), y: Double(p.y / max(size.height, 1))) }
-    private func fromSpot(_ s: Spot) -> CGPoint { clampToFloor(CGPoint(x: CGFloat(s.x) * size.width, y: CGFloat(s.y) * size.height)) }
+    private func toSpot(_ p: CGPoint) -> Spot {
+        let area = worldSize
+        return Spot(x: Double(p.x / max(area.width, 1)), y: Double(p.y / max(area.height, 1)))
+    }
+    private func fromSpot(_ s: Spot) -> CGPoint {
+        let area = worldSize
+        return clampToFloor(CGPoint(x: CGFloat(s.x) * area.width, y: CGFloat(s.y) * area.height))
+    }
 
     private func syncFloorToModel() {
         model.floorPoops = floorPoops.map { toSpot($0.position) }
@@ -412,7 +434,7 @@ final class PenScene: SKScene {
         var best: (Int, CGFloat)?
         for (i, poop) in floorPoops.enumerated() {
             let d = poop.position.distance(to: p)
-            if d <= 7, d < (best?.1 ?? .infinity) { best = (i, d) }
+            if d <= 7 / displayScale, d < (best?.1 ?? .infinity) { best = (i, d) }   // 7 pt on screen
         }
         if let best { return .poop(best.0) }
         for b in bunnies.sorted(by: { $0.zPosition > $1.zPosition }) where b.hitTest(p) { return .bunny(b) }
@@ -423,17 +445,19 @@ final class PenScene: SKScene {
 
     /// While a bunny or the platform is being dragged, keep catching the mouse
     /// even if the cursor slips off it for a moment.
-    func isInteractive(at p: CGPoint) -> Bool {
-        draggedBunny != nil || pressedBunny != nil || platformPress != nil || target(at: p) != nil
+    func isInteractive(at scenePoint: CGPoint) -> Bool {
+        draggedBunny != nil || pressedBunny != nil || platformPress != nil || target(at: toWorld(scenePoint)) != nil
     }
 
-    func hover(at p: CGPoint?) {
-        let key = p.flatMap { target(at: $0)?.key }
+    func hover(at scenePoint: CGPoint?) {
+        let key = scenePoint.flatMap { target(at: toWorld($0))?.key }
         guard key != hoveredKey else { return }
         for b in corner.buttons { b.setHover(ObjectIdentifier(b) == key) }
         for b in bunnies { b.setHover(ObjectIdentifier(b) == key) }
         hoveredKey = key
     }
+
+    private func toWorld(_ scenePoint: CGPoint) -> CGPoint { world.convert(scenePoint, from: self) }
 
     // A press on a bunny becomes a pet (click) or a pick-up (drag).
     private var pressedBunny: Bunny?
@@ -447,7 +471,7 @@ final class PenScene: SKScene {
     private var platformRiders: [SKNode] = []
 
     override func mouseDragged(with event: NSEvent) {
-        let p = event.location(in: self)
+        let p = event.location(in: world)
         if let press = platformPress {
             if !platformDragging, abs(p.x - press.point.x) > 3 { beginPlatformDrag() }
             if platformDragging { movePlatform(toShift: press.shift - (p.x - press.point.x)) }
@@ -460,7 +484,8 @@ final class PenScene: SKScene {
         }
         guard let b = draggedBunny else { return }
         let feet = p + grabOffset
-        b.position = CGPoint(x: min(max(feet.x, 20), size.width - 20), y: min(max(feet.y, 0), size.height - 70))
+        let area = worldSize
+        b.position = CGPoint(x: min(max(feet.x, 20), area.width - 20), y: min(max(feet.y, 0), area.height - 70))
     }
 
     override func mouseUp(with event: NSEvent) {
@@ -478,7 +503,7 @@ final class PenScene: SKScene {
     }
 
     override func mouseDown(with event: NSEvent) {
-        let p = event.location(in: self)
+        let p = event.location(in: world)
         let front = NSWorkspace.shared.frontmostApplication?.localizedName ?? "?"
         guard let t = target(at: p) else {
             Log.info("Click at (\(Int(p.x)), \(Int(p.y))) hit nothing (front app: \(front))")
@@ -491,7 +516,7 @@ final class PenScene: SKScene {
             switch b.id {
             case "hay": addHay()
             case "water": freshWater()
-            case "menu": onMenuRequest?(b.position)
+            case "menu": onMenuRequest?(convert(b.position, from: corner))
             default: cleanUpEverything()
             }
         case .poop(let i):
@@ -532,7 +557,7 @@ final class PenScene: SKScene {
 
     func movePlatform(toShift newShift: CGFloat) {
         let old = corner.shift
-        corner.layout(width: size.width, shift: newShift)
+        corner.layout(width: worldSize.width, shift: newShift)
         // Move riders by how far the platform actually went (it stops at the screen edges).
         let dx = old - corner.shift
         guard dx != 0 else { return }
@@ -548,6 +573,30 @@ final class PenScene: SKScene {
         syncFloorToModel()
         save()
         Log.info("Put the platform down \(Int(corner.shift)) pt from the right edge.")
+    }
+
+    /// 🐰 menu → Size: everything shrinks or grows together, and stays where
+    /// it is on screen.
+    func setDisplaySize(_ newSize: Double) {
+        let old = displayScale
+        model.displaySize = newSize
+        let k = displayScale
+        guard k != old else { return }
+        let ratio = old / k
+        model.platformShift = Double(CGFloat(model.platformShift) * ratio)
+        world.setScale(k)
+        sortPlatformItems()
+        for b in corner.buttons { b.setLabelScale(labelScale) }
+        for n in floorPoops + peeSpots { n.position = clampToFloor(CGPoint(x: n.position.x * ratio, y: n.position.y)) }
+        for b in bunnies {
+            b.setLabelScale(labelScale)
+            guard !b.isHeld else { continue }
+            b.position = clampToFloor(CGPoint(x: b.position.x * ratio, y: b.position.y))
+            b.decideNext()
+        }
+        syncFloorToModel()
+        save()
+        Log.info("Size: \(Int((k * 100).rounded()))%.")
     }
 
     /// 🐰 menu → "Put the platform back in the corner".
@@ -598,6 +647,42 @@ final class PenScene: SKScene {
                 self.setArtStyle(self.artStyle == .drawn ? .realistic : .drawn)
             } }, .wait(forDuration: 0.5 * Double(speed)), .run { MainActor.assumeIsolated { [weak self] in
                 _ = self?.writeSnapshot(to: "\(dir)/switched-art.png")
+            } }]))
+        }
+        if options.tourActs?.contains("hittest") == true {
+            // Check that points on screen still find the buttons and bunnies at this size.
+            run(.sequence([.wait(forDuration: 2.0 * Double(speed)), .run { MainActor.assumeIsolated { [weak self] in
+                guard let self else { return }
+                for b in self.corner.buttons {
+                    let p = self.convert(b.position, from: self.corner)
+                    Log.info("Hit test: \(b.id) button at screen (\(Int(p.x)), \(Int(p.y))) → \(self.isInteractive(at: p))")
+                }
+                for b in self.bunnies {
+                    let p = self.convert(b.position + CGPoint(x: 0, y: 20), from: self.world)
+                    Log.info("Hit test: \(b.look.name) at screen (\(Int(p.x)), \(Int(p.y))) → \(self.isInteractive(at: p))")
+                }
+                if let poop = self.floorPoops.first {
+                    let p = self.convert(poop.position + CGPoint(x: 6 / self.displayScale, y: 0), from: self.world)
+                    Log.info("Hit test: poop, 6 pt to its right on screen → \(self.isInteractive(at: p))")
+                }
+                Log.info("Hit test: empty sky → \(self.isInteractive(at: CGPoint(x: 30, y: self.size.height - 10)))")
+                // Hover the hay button, to see its label at this size.
+                // (Directly: the real mouse position would clear a simulated hover.)
+                self.corner.buttons.first?.setHover(true)
+                self.bunnies.first?.setHover(true)
+            } }, .wait(forDuration: 0.5 * Double(speed)), .run { MainActor.assumeIsolated { [weak self] in
+                _ = self?.writeSnapshot(to: "\(dir)/hover.png")
+            } }]))
+        }
+        if let k = options.tourActs?.first(where: { $0.hasPrefix("resize") }).flatMap({ Double($0.dropFirst(6)) }) {
+            // Change the size mid-run (like the Size menu), then snapshot.
+            run(.sequence([.wait(forDuration: 3.0 * Double(speed)), .run { MainActor.assumeIsolated { [weak self] in
+                guard let self else { return }
+                Log.info("Before resize: platform \(Int(self.corner.shift)) pt from the right (world), Snoopy at screen x \(Int(self.bunnies[0].position.x * self.displayScale))")
+                self.setDisplaySize(k)
+                Log.info("After resize: platform \(Int(self.corner.shift)) pt from the right (world), Snoopy at screen x \(Int(self.bunnies[0].position.x * self.displayScale))")
+            } }, .wait(forDuration: 0.5 * Double(speed)), .run { MainActor.assumeIsolated { [weak self] in
+                _ = self?.writeSnapshot(to: "\(dir)/resized.png")
             } }]))
         }
         if options.tourActs?.contains("platform") == true {
@@ -675,7 +760,7 @@ final class PenScene: SKScene {
             h.position = p + CGPoint(x: CGFloat(i - 1) * 9, y: 0)
             h.zPosition = 350
             h.setScale(0.4)
-            addChild(h)
+            world.addChild(h)
             h.run(.sequence([.wait(forDuration: Double(i) * 0.12),
                              .group([.scale(to: 1, duration: 0.25), .moveBy(x: .random(in: -6...6), y: 28, duration: 1.1),
                                      .sequence([.wait(forDuration: 0.6), .fadeOut(withDuration: 0.5)])]),
@@ -691,7 +776,7 @@ final class PenScene: SKScene {
         z.position = p
         z.zPosition = 350
         z.alpha = 0
-        addChild(z)
+        world.addChild(z)
         z.run(.sequence([.group([.fadeIn(withDuration: 0.3), .scale(to: 1.6, duration: 2), .moveBy(x: 10, y: 22, duration: 2),
                                  .sequence([.wait(forDuration: 1.3), .fadeOut(withDuration: 0.7)])]),
                          .removeFromParent()]))
@@ -704,7 +789,7 @@ final class PenScene: SKScene {
             c.strokeColor = .clear
             c.position = p
             c.zPosition = 300
-            addChild(c)
+            world.addChild(c)
             let dx = CGFloat(i - 2) * 5 + 2
             c.run(.sequence([.group([.moveBy(x: dx, y: .random(in: 3...7), duration: 0.35), .scale(to: 2, duration: 0.35),
                                      .fadeOut(withDuration: 0.35)]),
@@ -718,19 +803,20 @@ final class PenScene: SKScene {
         s.position = p + CGPoint(x: 0, y: 2)
         s.zPosition = 350
         s.setScale(0.3)
-        addChild(s)
+        world.addChild(s)
         s.run(.sequence([.group([.scale(to: 1.2, duration: 0.25), .moveBy(x: 0, y: 10, duration: 0.6)]),
                          .fadeOut(withDuration: 0.3), .removeFromParent()]))
     }
 
     func toast(_ text: String) {
         let t = Bubble.pill(text, fontSize: 11, color: NSColor(hex: 0xFFF8E8))
-        let w = t.calculateAccumulatedFrame().width
-        let x = min(size.width - 14 - w / 2, corner.footprint.maxX - 14 - w / 2)
+        let w = t.calculateAccumulatedFrame().width * labelScale
+        let x = min(worldSize.width - 14 - w / 2, corner.footprint.maxX - 14 - w / 2)
         t.position = CGPoint(x: max(14 + w / 2, x), y: corner.footprint.maxY + 18)
+        t.setScale(labelScale)
         t.zPosition = 420
         t.alpha = 0
-        addChild(t)
+        world.addChild(t)
         t.run(.sequence([.fadeIn(withDuration: 0.3), .wait(forDuration: 9), .fadeOut(withDuration: 0.6), .removeFromParent()]))
     }
 }

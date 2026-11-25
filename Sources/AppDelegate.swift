@@ -199,6 +199,15 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         let artItem = NSMenuItem(title: "Bunny art", action: nil, keyEquivalent: "")
         artItem.submenu = art
         menu.addItem(artItem)
+        let sizes = NSMenu()
+        for (title, value) in Self.sizeChoices {
+            let item = add(sizes, title, #selector(chooseSize(_:)))
+            item.representedObject = value
+            item.state = abs(scene.model.displaySize - value) < 0.01 ? .on : .off
+        }
+        let sizeItem = NSMenuItem(title: "Size", action: nil, keyEquivalent: "")
+        sizeItem.submenu = sizes
+        menu.addItem(sizeItem)
         menu.addItem(.separator())
         add(menu, "Quit Snoopy & Bambi", #selector(quit))
     }
@@ -215,6 +224,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     @objc private func freshWater() { scene.freshWater() }
     @objc private func cleanUp() { scene.cleanUpEverything() }
     @objc private func resetPlatform() { scene.resetPlatform() }
+    private static let sizeChoices: [(String, Double)] = [
+        ("100% (the original size)", 1.0), ("80%", 0.8), ("65%", 0.65), ("50%", 0.5),
+    ]
+
+    @objc private func chooseSize(_ sender: NSMenuItem) {
+        if let value = sender.representedObject as? Double { scene.setDisplaySize(value) }
+    }
+
     @objc private func chooseArtStyle(_ sender: NSMenuItem) {
         if let name = sender.representedObject as? String, let style = ArtStyle(rawValue: name) { scene.setArtStyle(style) }
     }

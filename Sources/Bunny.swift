@@ -83,6 +83,9 @@ final class Bunny: SKNode {
         CGRect(x: position.x - 34 * s, y: position.y - 4, width: 68 * s, height: 54 * s).contains(p)
     }
 
+    /// Keeps the name tag readable when everything is drawn small.
+    func setLabelScale(_ k: CGFloat) { nameTag.setScale(k) }
+
     func setHover(_ on: Bool) {
         guard !look.isStandIn else { return }
         nameTag.removeAllActions()
@@ -279,7 +282,7 @@ final class Bunny: SKNode {
             return [go(spot), faceStep(right), waitAndThump(Double.random(in: 12...25))]
         case .visitPartner:
             guard let partner else { return fidgetSteps(3...6) }
-            let side: CGFloat = partner.position.x > pen.size.width / 2 ? -1 : 1
+            let side: CGFloat = partner.position.x > pen.worldSize.width / 2 ? -1 : 1
             let target = pen.clampToFloor(partner.position + CGPoint(x: side * 46 * s, y: CGFloat.random(in: -6...6)))
             return [go(target), call { [weak self] in
                 guard let self, let p = self.partner else { return }
@@ -291,7 +294,7 @@ final class Bunny: SKNode {
     private func sleepSpot(_ pen: PenScene) -> (CGPoint, Bool)? {
         // Cuddle up next to a resting partner most of the time.
         if let p = partner, p.isResting, Double.random(in: 0...1) < 0.7 {
-            let side: CGFloat = p.position.x > pen.size.width / 2 ? -1 : 1
+            let side: CGFloat = p.position.x > pen.worldSize.width / 2 ? -1 : 1
             return (pen.clampToFloor(p.position + CGPoint(x: side * 44 * s, y: -4)), side < 0)
         }
         if Double.random(in: 0...1) < 0.4 { return (pen.randomFloorPoint(near: nil), Bool.random()) }

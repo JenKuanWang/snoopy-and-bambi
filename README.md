@@ -104,6 +104,10 @@ type **snoopy**, press **Return**.
   to have them live on the desktop behind your windows.
 - 🐰 menu → **Bunny art** → **Realistic** or **Drawn** switches their look
   right away, and it's remembered.
+- 🐰 menu → **Size** makes everything (bunnies, platform, buttons, poops)
+  smaller or bigger together: 50%, 65% (the default), 80%, or 100% (the
+  original size). Message bubbles and name tags shrink less, so they stay
+  readable.
 
 ## Building
 
@@ -128,4 +132,5 @@ app. If one is missing, the nearest pose is used instead.
 Test switches: `--test-seconds N` (quit after N s), `--snapshot file.png`,
 `--state-dir DIR` (use a separate save folder), `--speed X` (needs change X
 times faster), `--verbose`, `--render-art DIR` (draw every pose to PNGs),
-`--art drawn|realistic` (which art to use, also for `--render-art`).
+`--art drawn|realistic` (which art to use, also for `--render-art`),
+`--size X` (how big everything is drawn, 1 = original).

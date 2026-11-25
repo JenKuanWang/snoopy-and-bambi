@@ -731,6 +731,12 @@ final class PenButton: SKNode {
 
     func contains(scenePoint p: CGPoint) -> Bool { p.distance(to: position) <= radius + 3 }
 
+    /// Keeps the hover label readable when everything is drawn small.
+    func setLabelScale(_ k: CGFloat) {
+        tip.setScale(k)
+        tip.position = CGPoint(x: 0, y: radius + 4 + 10 * k)
+    }
+
     func setHover(_ on: Bool) {
         tip.removeAllActions()
         tip.run(.fadeAlpha(to: on ? 1 : 0, duration: 0.12))

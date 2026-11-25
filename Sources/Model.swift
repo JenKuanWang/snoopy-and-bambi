@@ -39,12 +39,16 @@ struct PenModel: Codable {
     var platformShift = 0.0
     /// "realistic" (painted sprites) or "drawn" (drawn in code).
     var artStyle = "realistic"
+    /// How big everything is drawn (1 = the original size).
+    var displaySize = PenModel.defaultDisplaySize
     var notificationsOn = false
     var lastHayNotice: Date?
     var lastWaterNotice: Date?
     var lastLitterNotice: Date?
 
     init() {}
+
+    static let defaultDisplaySize = 0.65
 
     // Tolerant decoding: a missing key falls back to its default, so older
     // save files keep working as features are added.
@@ -64,6 +68,7 @@ struct PenModel: Codable {
         bottomOnly = try c.decodeIfPresent(Bool.self, forKey: .bottomOnly) ?? true
         platformShift = try c.decodeIfPresent(Double.self, forKey: .platformShift) ?? 0
         artStyle = try c.decodeIfPresent(String.self, forKey: .artStyle) ?? d.artStyle
+        displaySize = try c.decodeIfPresent(Double.self, forKey: .displaySize) ?? d.displaySize
         notificationsOn = try c.decodeIfPresent(Bool.self, forKey: .notificationsOn) ?? false
         lastHayNotice = try c.decodeIfPresent(Date.self, forKey: .lastHayNotice)
         lastWaterNotice = try c.decodeIfPresent(Date.self, forKey: .lastWaterNotice)
